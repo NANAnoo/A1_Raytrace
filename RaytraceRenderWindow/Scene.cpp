@@ -18,9 +18,11 @@ Scene::Scene(std::vector<ThreeDModel> *texobjs,RenderParameters *renderp)
 Matrix4 Scene::getModelview()
 {
     Matrix4 result;
-    result.SetIdentity();
     //TODO: Grab all the necessary matrices to build your modelview. Sliders, Arcball, centering.
-
+    Matrix4 transilation;
+    transilation.SetTranslation(Cartesian3(rp->xTranslate, rp->yTranslate, rp->zTranslate));
+    // rotate and translate
+    result = transilation * rp->rotationMatrix;
     return result;
 }
 
@@ -104,7 +106,15 @@ Scene::CollisionInfo Scene::closestTriangle(Ray r)
     //TODO: method to find the closest triangle!
 
     Scene::CollisionInfo ci;
-    ci.t = r.origin.x; // this is just so it compiles warning free, please delete.
+    ci.t = std::numeric_limits<float>::infinity();
+    for (auto tri : triangles) {
+        float cur_t = tri.intersect(r);
+        // smaller t, closer triangle.
+        if (ci.t > cur_t) {
+            ci.t = cur_t;
+            ci.tri = tri;
+        }
+    }
 
     return ci;
 }
