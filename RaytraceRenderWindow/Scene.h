@@ -38,11 +38,14 @@ public:
     Material *default_mat;
 
     std::vector<Triangle> triangles;
-
+    std::vector<Light *> scene_lights;
     Scene(std::vector<ThreeDModel> *texobjs,RenderParameters *renderp);
     void updateScene();
     CollisionInfo closestTriangle(Ray r);
     Matrix4 getModelview();
+
+    // main render funtion
+    Homogeneous4 colorFromRay(Ray &r);
 };
 
 #endif // SCENE_H

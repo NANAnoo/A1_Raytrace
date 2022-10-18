@@ -58,3 +58,15 @@ Homogeneous4 Light::GetPosition()
         return out;
     }
 }
+
+Light* Light::TransformedLight(Matrix4 transformed)
+{
+    return new Light(
+        type,
+        lightColor,
+        transformed * lightPosition,
+        transformed * lightDirection,
+        transformed * tangent1,
+        transformed * tangent2
+    );
+}

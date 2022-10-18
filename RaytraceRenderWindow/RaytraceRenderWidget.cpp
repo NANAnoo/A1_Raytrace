@@ -134,11 +134,8 @@ void RaytraceRenderWidget::RaytraceThread()
                 float x = (((static_cast<float>(i) + 0.5f) / static_cast<float>(frameBuffer.width)) - 0.5f) * 2.f;
                 Ray r(Cartesian3(0, 0, 0), Cartesian3(x, y, -1).unit(), Ray::Type::primary);
 
-                // 2. get nearest intersection in scene
-                Scene::CollisionInfo ci = raytraceScene.closestTriangle(r);
-                if (ci.t > 0 && ci.t < std::numeric_limits<float>::infinity()) {
-                    color = Homogeneous4(1, 1, 1, 1);
-                }
+                // 2. get color from ray in the scene
+                color = raytraceScene.colorFromRay(r);
                 //Gamma correction....
                 float gamma = 2.2f;
                 //We already calculate everything in float, so we just do gamma correction before putting it integer format.

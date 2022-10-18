@@ -18,6 +18,7 @@
 #define LIGHT_H
 
 #include "Homogeneous4.h"
+#include "Matrix4.h"
 
 class Light
 {
@@ -43,6 +44,7 @@ public:
     Light(LightType type,Homogeneous4 color,Homogeneous4 pos, Homogeneous4 dir, Homogeneous4 tan1, Homogeneous4 tan2);
     Homogeneous4 GetPosition();
     Homogeneous4 GetPositionCenter();
+    Light *TransformedLight(Matrix4 transformed);
 
     bool enabled;
 
