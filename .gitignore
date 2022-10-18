@@ -1,3 +1,7 @@
 /build
+/RaytraceRenderWindow/build
 /test_objs
 *RaytraceRenderWindow/RaytraceRenderWindow.pro.user
+.DS_Store
+.vscode
+*/Raytrace_macos.pro

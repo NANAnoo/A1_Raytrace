@@ -67,7 +67,12 @@ void RaytraceRenderWidget::initializeGL()
 void RaytraceRenderWidget::resizeGL(int w, int h)
     { // RaytraceRenderWidget::resizeGL()
     // resize the render image
+#if defined(__APPLE__)
+    // mac suit screen
+    frameBuffer.Resize(2 * w, 2 * h);
+#else
     frameBuffer.Resize(w, h);
+#endif
     } // RaytraceRenderWidget::resizeGL()
     
 // called every time the widget needs painting
@@ -112,7 +117,11 @@ void RaytraceRenderWidget::RaytraceThread()
 
     //Each pixel in parallel using openMP.
     for(int loop = 0; loop < loops; loop++){
+
+#ifndef  __APPLE__
+// solve compile problem in mac
         #pragma omp parallel for schedule(dynamic)
+#endif
         for(int j = 0; j < frameBuffer.height; j++){
             for(int i = 0; i < frameBuffer.width; i++){
 
@@ -123,7 +132,7 @@ void RaytraceRenderWidget::RaytraceThread()
                 // 1. get pixel's center coord into VCS, and build ray
                 float y = (((static_cast<float>(j) + 0.5f) / static_cast<float>(frameBuffer.height)) - 0.5f) * 2.f;
                 float x = (((static_cast<float>(i) + 0.5f) / static_cast<float>(frameBuffer.width)) - 0.5f) * 2.f;
-                Ray r(Cartesian3(0, 0, 1), Cartesian3(x, y, -1).unit(), Ray::Type::primary);
+                Ray r(Cartesian3(0, 0, 0), Cartesian3(x, y, -1).unit(), Ray::Type::primary);
 
                 // 2. get nearest intersection in scene
                 Scene::CollisionInfo ci = raytraceScene.closestTriangle(r);

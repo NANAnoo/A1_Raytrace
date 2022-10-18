@@ -20,7 +20,7 @@ Matrix4 Scene::getModelview()
     Matrix4 result;
     //TODO: Grab all the necessary matrices to build your modelview. Sliders, Arcball, centering.
     Matrix4 transilation;
-    transilation.SetTranslation(Cartesian3(rp->xTranslate, rp->yTranslate, rp->zTranslate));
+    transilation.SetTranslation(Cartesian3(rp->xTranslate, rp->yTranslate, rp->zTranslate-1));
     // rotate and translate
     result = transilation * rp->rotationMatrix;
     return result;
