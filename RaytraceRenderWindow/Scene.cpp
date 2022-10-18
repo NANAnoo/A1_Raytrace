@@ -135,9 +135,6 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
     Scene::CollisionInfo ci = closestTriangle(r);
     Cartesian3 intersetion = r.origin + ci.t * r.direction;
 
-    // set Blign-Phong parameters
-    // metal parameters
-    float metal_P = 150;
 
     // get interpolation normal and color
     Cartesian3 baricentric = ci.tri.baricentric(intersetion);
@@ -153,27 +150,30 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
     float EPS = std::numeric_limits<float>::epsilon();
     if (ci.t > EPS && ci.t < INF)
     {
+        Homogeneous4 amb_light = ci.tri.shared_material->ambient;
         if (ci.tri.shared_material->isLight()) {
             return ci.tri.shared_material->emissive;
         }
         // Blihn-Phong & Shade from lights:
         if (rp->phongEnabled || rp->shadowsEnabled)
         {
+            if (rp->phongEnabled) // add amb_light under phong
+                color = tri_color.modulate(amb_light);
             for (Light *l : scene_lights)
             {
                 Ray lightr(intersetion, (l->GetPositionCenter().Vector() - intersetion).unit(), Ray::Type::primary);
                 // To avoid the light hitting the intersetion's triangle
-                lightr.origin = lightr.origin + lightr.direction * EPS * 10;
+                lightr.origin = lightr.origin;
 
-                Cartesian3 light_position = l->GetPosition().Vector();
+                Cartesian3 light_position = l->GetPositionCenter().Vector();
                 float t_max = (l->GetPositionCenter().Vector() - lightr.origin).length();
                 Homogeneous4 temp_color;
                 if (rp->shadowsEnabled)
                 {
                     // check if the light is blocked
                     CollisionInfo tci = closestTriangle(lightr);
-                    if (tci.t > EPS && tci.t < t_max - EPS * 10) {
-                        // this light is blocked;
+                    if (tci.t > EPS && tci.t < t_max - EPS) {
+                        // this light is blocked;, only amb_light left
                         continue;
                     }
                 }
@@ -185,16 +185,16 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
                     Cartesian3 U_O_L = O_L.unit();
                     Cartesian3 U_O_R = (r.origin - intersetion).unit();
                     float length_OL = O_L.length();
-                    float half_angle_between_normal_and_centerline =
-                        std::max(0.f, (U_O_L + U_O_R).unit().dot(normal));
-                    float angle_of_normal_and_light = std::max(0.f, normal.dot(U_O_L));
-                    temp_color = ci.tri.shared_material->ambient;
-                    temp_color = temp_color + 
-                                 1.0 / (length_OL * length_OL) *
-                                 // specular
-                                 Homogeneous4(ci.tri.shared_material->specular * powf(half_angle_between_normal_and_centerline, metal_P) + 
-                                 // diffuse
-                                 ci.tri.shared_material->diffuse * angle_of_normal_and_light).modulate(l->GetColor());
+                    // half_angle_between_normal_and_centerline
+                    float angle_half = std::max(0.f, (U_O_L + U_O_R).unit().dot(normal));
+                    // angle_of_normal_and_light
+                    float angle_nl = std::max(0.f, normal.dot(U_O_L));
+                    // distance weaken
+                    float distance_factor = 1.f / (length_OL * length_OL);
+
+                    Homogeneous4 specular_light = Homogeneous4(ci.tri.shared_material->specular * powf(angle_half, ci.tri.shared_material->shininess));
+                    Homogeneous4 diffuse_light = ci.tri.shared_material->diffuse * angle_nl;
+                    temp_color = distance_factor * (specular_light + diffuse_light).modulate(l->GetColor());
                     color = color + temp_color.modulate(tri_color);
                 } else {
                     float O_L = (light_position - intersetion).length();

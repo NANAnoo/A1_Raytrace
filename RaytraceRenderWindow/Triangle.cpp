@@ -26,7 +26,7 @@ float Triangle::intersect(Ray r)
     // (direction * t - vector(origin,A)) * planar_normal = 0;
     // t = vector(origin,A) * planar_normal / (direction * planar_normal);
     float t = (verts[0] - r.origin).Vector().dot(planar_normal) / (r.direction.dot(planar_normal));
-    if (t < 0)
+    if (t < std::numeric_limits<float>::epsilon())
         // the intersection point is on the opposite direction with the ray.
         return std::numeric_limits<float>::infinity();
 
