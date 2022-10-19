@@ -163,7 +163,9 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
             {
                 Ray lightr(intersetion, (l->GetPositionCenter().Vector() - intersetion).unit(), Ray::Type::primary);
                 // To avoid the light hitting the intersetion's triangle
-                lightr.origin = lightr.origin;
+                // movie the origin along the direction until the particial part along normal adds 100*EPS
+                float dis = 10 * EPS / lightr.direction.dot(normal);
+                lightr.origin = lightr.origin + lightr.direction * dis;
 
                 Cartesian3 light_position = l->GetPositionCenter().Vector();
                 float t_max = (l->GetPositionCenter().Vector() - lightr.origin).length();
@@ -172,8 +174,8 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
                 {
                     // check if the light is blocked
                     CollisionInfo tci = closestTriangle(lightr);
-                    if (tci.t > EPS && tci.t < t_max - EPS) {
-                        // this light is blocked;, only amb_light left
+                    if (tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight()) {
+                        // this light is blocked;
                         continue;
                     }
                 }
