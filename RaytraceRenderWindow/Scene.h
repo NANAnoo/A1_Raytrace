@@ -46,6 +46,10 @@ public:
 
     // main render funtion
     Homogeneous4 colorFromRay(Ray &r);
+
+private:
+    Homogeneous4 GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesian3 &hitPoint, Cartesian3 &normal, Material *m, Light *l);
+    bool CheckShadowATPoint(Cartesian3 &hitPoint,  Cartesian3 &normal, Light *l);
 };
 
 #endif // SCENE_H

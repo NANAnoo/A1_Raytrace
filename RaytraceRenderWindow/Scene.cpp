@@ -36,7 +36,7 @@ void Scene::updateScene()
 {
     triangles.clear();
     scene_lights.clear();
-    
+
     Matrix4 modelView = getModelview();
     // We go through all the objects to construct the scene
     for (int i = 0; i < int(objects->size()); i++)
@@ -104,7 +104,8 @@ void Scene::updateScene()
     }         // per object
 
     // transform all the lights in rp
-    for (Light *l : rp->lights) {
+    for (Light *l : rp->lights)
+    {
         scene_lights.push_back(l->TransformedLight(modelView));
     }
 }
@@ -135,7 +136,6 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
     Scene::CollisionInfo ci = closestTriangle(r);
     Cartesian3 intersetion = r.origin + ci.t * r.direction;
 
-
     // get interpolation normal and color
     Cartesian3 baricentric = ci.tri.baricentric(intersetion);
     Cartesian3 normal = baricentric.x * ci.tri.normals[0].Vector() +
@@ -151,63 +151,71 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
     if (ci.t > EPS && ci.t < INF)
     {
         Homogeneous4 amb_light = ci.tri.shared_material->ambient;
-        if (ci.tri.shared_material->isLight()) {
+        if (ci.tri.shared_material->isLight())
+        {
             return ci.tri.shared_material->emissive;
         }
         // Blihn-Phong & Shade from lights:
         if (rp->phongEnabled || rp->shadowsEnabled)
         {
-            if (rp->phongEnabled) // add amb_light under phong
-                color = tri_color.modulate(amb_light);
             for (Light *l : scene_lights)
             {
-                Ray lightr(intersetion, (l->GetPositionCenter().Vector() - intersetion).unit(), Ray::Type::primary);
-                // To avoid the light hitting the intersetion's triangle
-                // movie the origin along the direction until the particial part along normal adds 100*EPS
-                float dis = 10 * EPS / lightr.direction.dot(normal);
-                lightr.origin = lightr.origin + lightr.direction * dis;
-
-                Cartesian3 light_position = l->GetPositionCenter().Vector();
-                float t_max = (l->GetPositionCenter().Vector() - lightr.origin).length();
-                Homogeneous4 temp_color;
-                if (rp->shadowsEnabled)
+                if (rp->shadowsEnabled && CheckShadowATPoint(intersetion, normal, l))
                 {
-                    // check if the light is blocked
-                    CollisionInfo tci = closestTriangle(lightr);
-                    if (tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight()) {
-                        // this light is blocked;
-                        continue;
-                    }
+                    // light is blocked, if there is Blihn-Phong, add ambient
+                    if (rp->phongEnabled)
+                        color = color + tri_color.modulate(ci.tri.shared_material->ambient);
+                    continue;
                 }
                 // Blihn-Phong
-                // amb_light + reflect + metal
                 if (rp->phongEnabled)
-                {
-                    Cartesian3 O_L = light_position - intersetion;
-                    Cartesian3 U_O_L = O_L.unit();
-                    Cartesian3 U_O_R = (r.origin - intersetion).unit();
-                    float length_OL = O_L.length();
-                    // half_angle_between_normal_and_centerline
-                    float angle_half = std::max(0.f, (U_O_L + U_O_R).unit().dot(normal));
-                    // angle_of_normal_and_light
-                    float angle_nl = std::max(0.f, normal.dot(U_O_L));
-                    // distance weaken
-                    float distance_factor = 1.f / (length_OL * length_OL);
-
-                    Homogeneous4 specular_light = Homogeneous4(ci.tri.shared_material->specular * powf(angle_half, ci.tri.shared_material->shininess));
-                    Homogeneous4 diffuse_light = ci.tri.shared_material->diffuse * angle_nl;
-                    temp_color = distance_factor * (specular_light + diffuse_light).modulate(l->GetColor());
-                    color = color + temp_color.modulate(tri_color);
-                } else {
-                    float O_L = (light_position - intersetion).length();
-                    color = color + 1.f / (O_L * O_L) *Homogeneous4(1, 1, 1, 1);
-                }
+                    color = color + tri_color.modulate(GetColorFromBlinnPhongAtPoint(r.origin, intersetion, normal, ci.tri.shared_material, l));
+                else
+                // default color
+                    color = color + tri_color.modulate(ci.tri.shared_material->ambient);
             }
-        } else {
+        }
+        else
+        {
             color = Homogeneous4(1, 1, 1, 1);
         }
     }
     // calculate color provided from the envoriment;
 
     return color;
+}
+
+Homogeneous4 Scene::GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesian3 &hitPoint, Cartesian3 &normal, Material *m, Light *l)
+{
+    Cartesian3 light_position = l->GetPositionCenter().Vector();
+    Cartesian3 O_L = light_position - hitPoint;
+    Cartesian3 U_O_L = O_L.unit();
+    Cartesian3 U_O_R = (lookFrom - hitPoint).unit();
+    float length_OL = O_L.length();
+    // half_angle_between_normal_and_centerline
+    float angle_half = std::max(0.f, (U_O_L + U_O_R).unit().dot(normal));
+    // angle_of_normal_and_light
+    float angle_nl = std::max(0.f, normal.dot(U_O_L));
+    // distance weaken
+    float distance_factor = 1.f / (length_OL * length_OL);
+
+    Homogeneous4 specular_light = m->specular * powf(angle_half, m->shininess);
+    Homogeneous4 diffuse_light = m->diffuse * angle_nl;
+    // add ambient, specular_light, diffuse_light together
+    return Homogeneous4(m->ambient) + distance_factor * (specular_light + diffuse_light).modulate(l->GetColor());
+}
+
+bool Scene::CheckShadowATPoint(Cartesian3 &hitPoint, Cartesian3 &normal, Light *l)
+{
+    Cartesian3 lightCenter = l->GetPositionCenter().Vector();
+    Ray lightr(hitPoint, (lightCenter - hitPoint).unit(), Ray::Type::primary);
+    float EPS = std::numeric_limits<float>::epsilon();
+    // To avoid the light hitting the intersetion's triangle
+    // movie the origin along the direction until the particial part along normal adds 100*EPS
+    float dis = 10 * EPS / lightr.direction.dot(normal);
+    lightr.origin = lightr.origin + lightr.direction * dis;
+
+    CollisionInfo tci = closestTriangle(lightr);
+    float t_max = (lightCenter - lightr.origin).length();
+    return tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight();
 }
