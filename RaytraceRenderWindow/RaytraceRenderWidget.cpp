@@ -122,8 +122,9 @@ void RaytraceRenderWidget::RaytraceThread()
 // solve compile problem in mac
         #pragma omp parallel for schedule(dynamic)
 #endif
+    float aspect_radio = static_cast<float>(frameBuffer.width) /  static_cast<float>(frameBuffer.height);
         for(int j = 0; j < frameBuffer.height; j++){
-            for(int i = 0; i < frameBuffer.width; i++){
+            for(int i = 0; i < frameBuffer.width; i++) {
 
                 //TODO: YOUR CODE GOES HERE
                 Homogeneous4 color; // calculate your raytraced color here.
@@ -132,9 +133,15 @@ void RaytraceRenderWidget::RaytraceThread()
                 // 1. get pixel's center coord into VCS, and build ray
                 float y = (((static_cast<float>(j) + 0.5f) / static_cast<float>(frameBuffer.height)) - 0.5f) * 2.f;
                 float x = (((static_cast<float>(i) + 0.5f) / static_cast<float>(frameBuffer.width)) - 0.5f) * 2.f;
+                // 2. set camera radio
+                if (aspect_radio < 1.f) {
+                    y *= aspect_radio;
+                } else {
+                    x *= aspect_radio;
+                }
                 Ray r(Cartesian3(0, 0, 0), Cartesian3(x, y, -1).unit(), Ray::Type::primary);
 
-                // 2. get color from ray in the scene
+                // 3. get color from ray in the scene
                 color = raytraceScene.colorFromRay(r);
                 //Gamma correction....
                 float gamma = 2.2f;
