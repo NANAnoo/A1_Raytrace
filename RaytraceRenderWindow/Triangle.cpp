@@ -34,9 +34,9 @@ float Triangle::intersect(Ray r)
     // check if the P is on the left side of each edge
     // check if the cross result has same direction with normal, if yes, the P is on left
     Cartesian3 intersection = r.origin + t * r.direction;
-    if (((verts[1] - verts[0]).Vector().cross(intersection - verts[0].Vector())).dot(planar_normal) > 0 &&
-        ((verts[2] - verts[1]).Vector().cross(intersection - verts[1].Vector())).dot(planar_normal) > 0 &&
-        ((verts[0] - verts[2]).Vector().cross(intersection - verts[2].Vector())).dot(planar_normal) > 0)
+    if (((verts[1] - verts[0]).Vector().cross(intersection - verts[0].Vector())).dot(planar_normal) >= 0 &&
+        ((verts[2] - verts[1]).Vector().cross(intersection - verts[1].Vector())).dot(planar_normal) >= 0 &&
+        ((verts[0] - verts[2]).Vector().cross(intersection - verts[2].Vector())).dot(planar_normal) >= 0)
         // P = origin + t * direction, use t to represent the intersection point
         return t;
 

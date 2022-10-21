@@ -30,6 +30,9 @@ public:
     Cartesian3 direction;
     Type ray_type;
 
+    Ray getReflectAt(Cartesian3 &hit, Cartesian3 &normal);
+    Ray getRefractAt(Cartesian3 &hit, Cartesian3 normal, float t);
+    Ray getRandomReflect(Cartesian3 &hit);
 };
 
 #endif // RAY_H

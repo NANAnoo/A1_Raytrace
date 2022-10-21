@@ -133,8 +133,75 @@ Scene::CollisionInfo Scene::closestTriangle(Ray r)
 Homogeneous4 Scene::colorFromRay(Ray &r)
 {
     Homogeneous4 color;
+
+    std::vector<RecursiveInfo *> callStack;
+    std::vector<RecursiveInfo *> returnStask;
+    
+    Scene::RecursiveInfo *root_info = new RecursiveInfo(r);
+    root_info->return_compute_type = Scene::DoneType;
+    root_info->material_from = nullptr;
+    callStack.push_back(root_info);
+    // recusive path_trace, shader frienly, no recursion function
+    while(callStack.size() != 0) {
+        RecursiveInfo *info = callStack.back();
+        callStack.pop_back();
+        if (returnStask.size() > 10) {
+            // reach max depth
+            info->need_compute_types = DoneType;
+        } else {
+            GetColorFromRayOneStep(info, callStack);
+        }
+        if (info->need_compute_types != Scene::DoneType) {
+            returnStask.push_back(info);
+        } else { 
+            // trace back to compute father nodes color
+            RecursiveInfo *returnInfo = nullptr;
+            do {
+                if (info == root_info) { 
+                    // reach root result;
+                    color = info->light_color.modulate(info->point_color);
+                    delete info;
+                    info == nullptr;
+                    return color;
+                }
+                returnInfo = returnStask.back();
+                if (returnInfo == nullptr) 
+                    // somthing went wrong
+                    return Homogeneous4(0, 0, 0, 0);
+                float returnMaterial;
+                switch (info->return_compute_type)
+                {
+                    case ReflecType:
+                        returnMaterial = info->material_from->reflectivity;
+                        break;         
+                    default:
+                        break;
+                }
+                returnInfo->light_color = returnInfo->light_color + info->light_color.modulate(info->point_color) * returnMaterial;
+                returnInfo->need_compute_types = static_cast<ComputeType>(returnInfo->need_compute_types - info->return_compute_type);
+                delete info;
+                info = nullptr;
+                if (returnInfo->need_compute_types == DoneType) { 
+                    // continue trace back
+                    returnStask.pop_back();
+                    info = returnInfo;
+                }
+            } while (info != nullptr);
+        }
+    }
+    
+    return color;
+}
+
+void Scene::GetColorFromRayOneStep(Scene::RecursiveInfo *info, std::vector<Scene::RecursiveInfo *> &callstack)
+{
+    Homogeneous4 color;
+    Ray r = info->ray_from;
     Scene::CollisionInfo ci = closestTriangle(r);
     Cartesian3 intersetion = r.origin + ci.t * r.direction;
+    // calculate color provided from the light;
+    if (ci.t <= std::numeric_limits<float>::epsilon() || ci.t >= std::numeric_limits<float>::infinity())
+        return;
 
     // get interpolation normal and color
     Cartesian3 baricentric = ci.tri.baricentric(intersetion);
@@ -145,44 +212,48 @@ Homogeneous4 Scene::colorFromRay(Ray &r)
     Homogeneous4 tri_color = baricentric.x * ci.tri.colors[0] +
                              baricentric.y * ci.tri.colors[1] +
                              baricentric.z * ci.tri.colors[2];
-    // calculate color provided from the light;
-    float INF = std::numeric_limits<float>::infinity();
-    float EPS = std::numeric_limits<float>::epsilon();
-    if (ci.t > EPS && ci.t < INF)
+    info->point_color = tri_color;
+    if (ci.tri.shared_material->isLight())
     {
-        Homogeneous4 amb_light = ci.tri.shared_material->ambient;
-        if (ci.tri.shared_material->isLight())
+        info->light_color = ci.tri.shared_material->emissive;
+        info->point_color = Homogeneous4(1, 1, 1, 1);
+        info->need_compute_types = DoneType;
+        return;
+    }
+    // Blihn-Phong & Shade from lights:
+    if (rp->phongEnabled || rp->shadowsEnabled)
+    {
+        for (Light *l : scene_lights)
         {
-            return ci.tri.shared_material->emissive;
-        }
-        // Blihn-Phong & Shade from lights:
-        if (rp->phongEnabled || rp->shadowsEnabled)
-        {
-            for (Light *l : scene_lights)
+            if (rp->shadowsEnabled && CheckShadowATPoint(intersetion, normal, l))
             {
-                if (rp->shadowsEnabled && CheckShadowATPoint(intersetion, normal, l))
-                {
-                    // light is blocked, if there is Blihn-Phong, add ambient
-                    if (rp->phongEnabled)
-                        color = color + tri_color.modulate(ci.tri.shared_material->ambient);
-                    continue;
-                }
-                // Blihn-Phong
+                // light is blocked, if there is Blihn-Phong, add ambient
                 if (rp->phongEnabled)
-                    color = color + tri_color.modulate(GetColorFromBlinnPhongAtPoint(r.origin, intersetion, normal, ci.tri.shared_material, l));
-                else
-                // default color
                     color = color + tri_color.modulate(ci.tri.shared_material->ambient);
+                continue;
             }
-        }
-        else
-        {
-            color = Homogeneous4(1, 1, 1, 1);
+            // Blihn-Phong
+            if (rp->phongEnabled)
+                color = color + tri_color.modulate(GetColorFromBlinnPhongAtPoint(r.origin, intersetion, normal, ci.tri.shared_material, l));
+            else
+                // default color
+                color = color + tri_color.modulate(ci.tri.shared_material->ambient);
         }
     }
-    // calculate color provided from the envoriment;
+    if (rp->reflectionEnabled && ci.tri.shared_material->reflectivity > 0.f) {
+        info->need_compute_types = static_cast<ComputeType>(info->need_compute_types + ReflecType);
+        RecursiveInfo *newInfo = new RecursiveInfo(r.getReflectAt(intersetion, normal));
+        newInfo->return_compute_type = ReflecType;
+        newInfo->material_from = ci.tri.shared_material;
+        callstack.push_back(newInfo);
+    }
+    if (rp->refractionEnabled) {
 
-    return color;
+    }
+    if (rp->monteCarloEnabled) {
+
+    }
+    info->light_color = color;
 }
 
 Homogeneous4 Scene::GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesian3 &hitPoint, Cartesian3 &normal, Material *m, Light *l)
@@ -208,10 +279,9 @@ Homogeneous4 Scene::GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesia
 bool Scene::CheckShadowATPoint(Cartesian3 &hitPoint, Cartesian3 &normal, Light *l)
 {
     Cartesian3 lightCenter = l->GetPositionCenter().Vector();
-    Ray lightr(hitPoint, (lightCenter - hitPoint).unit(), Ray::Type::primary);
+    Ray lightr(hitPoint, (lightCenter - hitPoint).unit(), Ray::Type::secondary);
     float EPS = std::numeric_limits<float>::epsilon();
     // To avoid the light hitting the intersetion's triangle
-    // movie the origin along the direction until the particial part along normal adds 100*EPS
     float dis = 10 * EPS / lightr.direction.dot(normal);
     lightr.origin = lightr.origin + lightr.direction * dis;
 
