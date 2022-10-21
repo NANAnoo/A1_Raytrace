@@ -52,8 +52,8 @@ private:
     {
         DoneType = 0 << 0,
         ReflecType = 1 << 0,
-        RefractType = 1 << 1,
-        AmbientType = 1 << 2, // may have more than one, put into last
+        RefractType = 1 << 8,
+        AmbientType = 1 << 16, // may have more than one, put into last
     };
     struct RecursiveInfo
     {
@@ -64,7 +64,8 @@ private:
         Homogeneous4 light_color;
         ComputeType need_compute_types;
         ComputeType return_compute_type;
-        explicit RecursiveInfo(Ray r) :ray_from(r), need_compute_types(DoneType), return_compute_type(DoneType){}
+        float previous_ior;
+        explicit RecursiveInfo(Ray r) :ray_from(r), need_compute_types(DoneType), return_compute_type(DoneType), previous_ior(1.f){}
     };
     /**
      * @brief Get the Color From Blinn Phong At Hit Point

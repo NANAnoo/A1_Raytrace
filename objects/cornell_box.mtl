@@ -45,8 +45,8 @@ Ks  0.8000  0.8000  0.6000
 Ke  0.0000  0.0000  0.0000
 Ns  10.0
 N_ior  1.06
-N_mirr 1.0
-N_transp 0.0
+N_mirr 0.0
+N_transp 1.0
 
 newmtl light
 Ka  0.0000  0.0000  0.0000

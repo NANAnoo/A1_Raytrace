@@ -24,14 +24,14 @@ class Ray
 
 
 public:
-    enum Type{primary,secondary};
+    enum Type{primary, secondary};
     Ray(Cartesian3 og,Cartesian3 dir,Type rayType);
     Cartesian3 origin;
     Cartesian3 direction;
     Type ray_type;
 
     Ray getReflectAt(Cartesian3 &hit, Cartesian3 &normal);
-    Ray getRefractAt(Cartesian3 &hit, Cartesian3 normal, float t);
+    Ray getRefractAt(Cartesian3 &hit, Cartesian3 &normal, float ior_from, float ior_in, bool &valid);
     Ray getRandomReflect(Cartesian3 &hit);
 };
 
