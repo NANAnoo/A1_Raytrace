@@ -31,8 +31,9 @@ public:
     Type ray_type;
 
     Ray getReflectAt(Cartesian3 &hit, Cartesian3 &normal);
-    Ray getRefractAt(Cartesian3 &hit, Cartesian3 &normal, float ior_from, float ior_in, bool &valid);
-    Ray getRandomReflect(Cartesian3 &hit);
+    Ray getRefractAt(Cartesian3 &hit, Cartesian3 &normal, float ior_from, float ior_to, bool &valid);
+    Ray getRandomReflect(Cartesian3 &hit, Cartesian3 &normal);
+    float getFresnelProbability(Cartesian3 &normal, float ior_from, float ior_to);
 };
 
 #endif // RAY_H

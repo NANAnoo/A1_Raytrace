@@ -103,6 +103,10 @@ void RaytraceRenderWidget::Raytrace()
 
     //clear frame buffer before we start
     frameBuffer.clear(RGBAValue(0.0f, 0.0f, 0.0f,1.0f));
+    floatbuffer = std::vector<std::vector<Homogeneous4>>(static_cast<unsigned int>(frameBuffer.height));
+    for (std::vector<Homogeneous4> &row : floatbuffer) {
+        row = std::vector<Homogeneous4>(static_cast<unsigned int>(frameBuffer.width));
+    }
 
     raytracingThread= std::thread(&RaytraceRenderWidget::RaytraceThread,this);
     raytracingThread.detach();
@@ -117,12 +121,11 @@ void RaytraceRenderWidget::RaytraceThread()
 
     //Each pixel in parallel using openMP.
     for(int loop = 0; loop < loops; loop++){
-
+        float aspect_radio = static_cast<float>(frameBuffer.width) /  static_cast<float>(frameBuffer.height);
 #ifndef  __APPLE__
 // solve compile problem in mac
         #pragma omp parallel for schedule(dynamic)
 #endif
-    float aspect_radio = static_cast<float>(frameBuffer.width) /  static_cast<float>(frameBuffer.height);
         for(int j = 0; j < frameBuffer.height; j++){
             for(int i = 0; i < frameBuffer.width; i++) {
 
@@ -131,8 +134,13 @@ void RaytraceRenderWidget::RaytraceThread()
 
                 // VCS, eye is at (0, 0, 0)
                 // 1. get pixel's center coord into VCS, and build ray
-                float y = (((static_cast<float>(j) + 0.5f) / static_cast<float>(frameBuffer.height)) - 0.5f) * 2.f;
-                float x = (((static_cast<float>(i) + 0.5f) / static_cast<float>(frameBuffer.width)) - 0.5f) * 2.f;
+                float dx = 0.5f, dy = 0.5f;
+                if (renderParameters->monteCarloEnabled) {
+                    dx = static_cast<float>(rand()) / RAND_MAX;
+                    dy = static_cast<float>(rand()) / RAND_MAX;
+                }
+                float y = (((static_cast<float>(j) + dx) / static_cast<float>(frameBuffer.height)) - 0.5f) * 2.f;
+                float x = (((static_cast<float>(i) + dy) / static_cast<float>(frameBuffer.width)) - 0.5f) * 2.f;
                 // 2. set camera radio
                 if (aspect_radio < 1.f) {
                     y *= aspect_radio;
@@ -142,18 +150,19 @@ void RaytraceRenderWidget::RaytraceThread()
                 Ray r(Cartesian3(0, 0, 0), Cartesian3(x, y, -1).unit(), Ray::Type::primary);
 
                 // 3. get color from ray in the scene
-                color = raytraceScene.colorFromRay(r);
+                color = raytraceScene.colorFromRay(r, 1.f, 10);
                 //Gamma correction....
                 float gamma = 2.2f;
                 //We already calculate everything in float, so we just do gamma correction before putting it integer format.
-                color.x = pow(color.x,1/gamma)/float(loop+1);
-                color.y = pow(color.y,1/gamma)/float(loop+1);
-                color.z = pow(color.z,1/gamma)/float(loop+1);
-                frameBuffer[j][i] = ((loop)/float(loop+1))*frameBuffer[j][i]+  RGBAValue(color.x*255.0f,color.y*255.0f,color.z*255.0f,255.0f);
-                frameBuffer[j][i].alpha = 255;
+                float pre = float(loop)/float(loop+1), now = 1.f - pre;
+                floatbuffer[j][i] = pre*floatbuffer[j][i] + now * color;
+                color.x = pow(floatbuffer[j][i].x,1/gamma);
+                color.y = pow(floatbuffer[j][i].y,1/gamma);
+                color.z = pow(floatbuffer[j][i].z,1/gamma);
+                frameBuffer[j][i] = RGBAValue(color.x*255.0f,color.y*255.0f,color.z*255.0f,255.0f);
                 }
             }
-        std::cout << " Done a loop!" << std::endl;
+        std::cout <<"[" << loop <<"]" << " Done a loop!" << std::endl;
         if(restartRaytrace){
             return;
         }

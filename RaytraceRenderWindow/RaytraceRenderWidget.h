@@ -88,6 +88,7 @@ class RaytraceRenderWidget : public QOpenGLWidget
     //threading stuff
     void RaytraceThread();
     private:
+    std::vector<std::vector<Homogeneous4>> floatbuffer;
 
     void forceRepaint();
     std::mutex drawingLock;

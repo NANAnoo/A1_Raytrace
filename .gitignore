@@ -1,5 +1,4 @@
-/build
-/RaytraceRenderWindow/build
+build*
 /test_objs
 *RaytraceRenderWindow/RaytraceRenderWindow.pro.user
 .DS_Store
