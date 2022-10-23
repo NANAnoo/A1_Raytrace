@@ -88,9 +88,9 @@ private:
 
     struct BVHNode
     {
+        AABB boundingBox;
         BVHNode *left;
         BVHNode *right;
-        AABB boundingBox;
         BVHNode(AABB &box) : boundingBox(box), left(nullptr), right(nullptr){}
         BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned int end);
         bool hit(Ray r, float tmin, float tmax, CollisionInfo &ci);

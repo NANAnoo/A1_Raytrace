@@ -192,14 +192,15 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
 
     if (m->isLight())
     {
-        return tri_color.modulate(m->emissive);
+        return m->emissive;
     }
     float EPS = std::numeric_limits<float>::epsilon();
     intersetion = intersetion + 10 * EPS * normal;
     // indirectcolor
     // amblight
     bool needPhong = true;
-    if (rp->monteCarloEnabled && (1.f - m->reflectivity - m->transparency) > EPS)
+    float cosine = r.direction.dot(normal);
+    if (rp->monteCarloEnabled && (1.f - m->reflectivity - m->transparency) > EPS && cosine < 0)
     {
         // enable monteCarlo
         Ray difuzz_ray = r.getRandomReflect(intersetion, normal);
@@ -220,7 +221,7 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
         //        }
     }
     // reflect
-    if (rp->reflectionEnabled && m->reflectivity > EPS)
+    if (rp->reflectionEnabled && m->reflectivity > EPS && cosine < 0)
     {
         Ray reflect_ray = r.getReflectAt(intersetion, normal);
         reflect_ray.ray_type = r.ray_type;
@@ -253,7 +254,7 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
         if (m->transparency > EPS)
             color = color + m->transparency * prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1);
         else
-            color = color + prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1).modulate(m->specular);
+            color = color + prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1).modulate(m->ambient);
     }
     // refraction
     if (rp->refractionEnabled && m->transparency > EPS)
@@ -303,7 +304,7 @@ Homogeneous4 Scene::GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesia
     // angle_of_normal_and_light
     float angle_nl = std::max(0.f, normal.dot(U_O_L));
     // distance weaken
-    float distance_factor = 1.f / (length_OL * length_OL);
+    float distance_factor = std::min(1.f, 1.f / (length_OL * length_OL));
 
     Homogeneous4 specular_light = m->specular * powf(angle_half, m->shininess);
     Homogeneous4 diffuse_light = m->diffuse * angle_nl;
@@ -372,7 +373,7 @@ Scene::BVHNode::BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned i
     {
     case 1:
         left = new BVHNode(boxes[begin]);
-        right = NULL;
+        right = nullptr;
         break;
     case 2:
         left = new BVHNode(boxes[begin]);
@@ -381,11 +382,11 @@ Scene::BVHNode::BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned i
     default:
         // sort objs
         AABB curmin;
-        for (int i = begin; i <= end; i++)
+        for (unsigned int i = begin; i <= end; i++)
         {
             curmin = boxes[i];
-            int index = i;
-            for (int j = i + 1; j <= end; j++)
+            unsigned int index = i;
+            for (unsigned int j = i + 1; j <= end; j++)
             {
                 AABB other = boxes[j];
                 int r = rand() % 3;
@@ -406,7 +407,7 @@ Scene::BVHNode::BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned i
         break;
     }
     AABB l = left->boundingBox, r;
-    if (right != NULL)
+    if (right != nullptr)
         r = right->boundingBox;
     else
         r = l;
@@ -426,7 +427,7 @@ bool Scene::BVHNode::hit(Ray r, float tmin, float tmax, CollisionInfo &ci)
 
     if (boundingBox.hit(r, tmin, tmax))
     {
-        if (left == NULL && right == NULL)
+        if (left == nullptr && right == nullptr)
         {
             if (boundingBox.tri.isValid())
             {
@@ -461,7 +462,7 @@ bool Scene::BVHNode::hit(Ray r, float tmin, float tmax, CollisionInfo &ci)
             ci = r_ci;
             return true;
         }
-        ci.t = std::numeric_limits<float>::infinity();
-        return false;
     }
+    ci.t = std::numeric_limits<float>::infinity();
+    return false;
 }
