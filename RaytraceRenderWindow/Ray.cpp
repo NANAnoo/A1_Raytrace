@@ -1,6 +1,6 @@
 #include "Ray.h"
 
-#include <math.h>
+#include <cmath>
 #include <limits>
 
 const float MY_PI = static_cast<float>(std::acos(-1));

@@ -12,6 +12,7 @@ Scene::Scene(std::vector<ThreeDModel> *texobjs, RenderParameters *renderp)
     Cartesian3 specular = Cartesian3(0.5f, 0.5f, 0.5f);
     Cartesian3 emissive = Cartesian3(0, 0, 0);
     float shininess = 1.0f;
+    bvh_root = nullptr;
 
     default_mat = new Material(ambient, diffuse, specular, emissive, shininess);
 }
@@ -108,11 +109,29 @@ void Scene::updateScene()
     {
         scene_lights.push_back(l->TransformedLight(modelView));
     }
+
+    // build BVH tree
+    if (triangles.size() > 10)
+    {
+        std::vector<AABB> boxes;
+        for (Triangle &tri : triangles)
+        {
+            boxes.push_back(tri);
+        }
+        // create bvh tree
+        bvh_root = new BVHNode(boxes, 0, boxes.size() - 1);
+    }
 }
 
 Scene::CollisionInfo Scene::closestTriangle(Ray r)
 {
     // TODO: method to find the closest triangle!
+    if (bvh_root != nullptr)
+    {
+        CollisionInfo ci;
+        bvh_root->hit(r, std::numeric_limits<float>::epsilon(), std::numeric_limits<float>::infinity(), ci);
+        return ci;
+    }
 
     Scene::CollisionInfo ci;
     ci.t = std::numeric_limits<float>::infinity();
@@ -133,22 +152,25 @@ Scene::CollisionInfo Scene::closestTriangle(Ray r)
 Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
 {
     Homogeneous4 color(0, 0, 0, 0);
-    if (maxdepth <= 0) {
+    if (maxdepth <= 0)
+    {
         return color;
     }
     Scene::CollisionInfo ci = closestTriangle(r);
     // calculate color provided from the light;
-    if (ci.t <= std::numeric_limits<float>::epsilon() || ci.t >= std::numeric_limits<float>::infinity())
+    if (ci.t <= std::numeric_limits<float>::epsilon() || ci.t >= std::numeric_limits<float>::infinity() || !ci.tri.isValid())
         return color;
 
     // get interpolation normal and color
     Cartesian3 intersetion = r.origin + ci.t * r.direction;
     Cartesian3 baricentric = ci.tri.baricentric(intersetion);
     Cartesian3 normal = (baricentric.x * ci.tri.normals[0].Vector() +
-                        baricentric.y * ci.tri.normals[1].Vector() +
-                        baricentric.z * ci.tri.normals[2].Vector()).unit();
-    if (rp->interpolationRendering) {
-        return (normal + Cartesian3(1, 1, 1))/2;
+                         baricentric.y * ci.tri.normals[1].Vector() +
+                         baricentric.z * ci.tri.normals[2].Vector())
+                            .unit();
+    if (rp->interpolationRendering)
+    {
+        return (normal + Cartesian3(1, 1, 1)) / 2;
     }
 
     Homogeneous4 tri_color = baricentric.x * ci.tri.colors[0] +
@@ -156,10 +178,11 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
                              baricentric.z * ci.tri.colors[2];
     Material *m = ci.tri.shared_material;
 
-    if(m->texture != nullptr) {
+    if (m->texture != nullptr)
+    {
         Cartesian3 texCoord = baricentric.x * ci.tri.uvs[0] +
-                               baricentric.y * ci.tri.uvs[1] +
-                                baricentric.z * ci.tri.uvs[2];
+                              baricentric.y * ci.tri.uvs[1] +
+                              baricentric.z * ci.tri.uvs[2];
         RGBAValue c = m->texture->GetTexel(texCoord.x, texCoord.y, true);
         tri_color.w = c.alpha / 255.f;
         tri_color.x = c.red / 255.f;
@@ -176,7 +199,8 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
     // indirectcolor
     // amblight
     bool needPhong = true;
-    if (rp->monteCarloEnabled && (1.f - m->reflectivity - m->transparency) > EPS) {
+    if (rp->monteCarloEnabled && (1.f - m->reflectivity - m->transparency) > EPS)
+    {
         // enable monteCarlo
         Ray difuzz_ray = r.getRandomReflect(intersetion, normal);
         difuzz_ray.ray_type = r.ray_type;
@@ -185,55 +209,60 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
         // pdf = 1 / (2 * pi)
         color = color + 2.f * static_cast<float>(M_PI) * temp_color;
         needPhong = false;
-//        for (Light l : scene_lights) {
-//            Cartesian3 light_position = l.GetPosition().Vector();
-//            if (CheckShadowATPoint(intersetion, light_position))
-//                continue;
-//            Cartesian3 O_L = light_position - intersetion;
-//            float r = O_L.length();
-//            float cosine = std::max(0.f, normal.dot(O_L));
-//            color = color + (1.f / (r * r) * cosine * l.GetColor()).modulate(m->diffuse);
-//        }
+        //        for (Light l : scene_lights) {
+        //            Cartesian3 light_position = l.GetPosition().Vector();
+        //            if (CheckShadowATPoint(intersetion, light_position))
+        //                continue;
+        //            Cartesian3 O_L = light_position - intersetion;
+        //            float r = O_L.length();
+        //            float cosine = std::max(0.f, normal.dot(O_L));
+        //            color = color + (1.f / (r * r) * cosine * l.GetColor()).modulate(m->diffuse);
+        //        }
     }
     // reflect
-    if (rp->reflectionEnabled && m->reflectivity > EPS) {
-         Ray reflect_ray = r.getReflectAt(intersetion, normal);
-         reflect_ray.ray_type = r.ray_type;
-         color = color + m->reflectivity * colorFromRay(reflect_ray, current_IOR, maxdepth - 1);
-         needPhong = false;
+    if (rp->reflectionEnabled && m->reflectivity > EPS)
+    {
+        Ray reflect_ray = r.getReflectAt(intersetion, normal);
+        reflect_ray.ray_type = r.ray_type;
+        color = color + m->reflectivity * colorFromRay(reflect_ray, current_IOR, maxdepth - 1);
+        needPhong = false;
     }
 
     // transparency
     float refract_part = 1.f;
     float ior_from = current_IOR, ior_to = m->indexOfRefraction;
     bool go_out = r.direction.dot(normal) > 0;
-    if (go_out) {
+    if (go_out)
+    {
         ior_from = ior_to;
         ior_to = 1.f;
     }
     // Fresnel
-    if (rp->fresnelRendering && (m->transparency > EPS || !rp->monteCarloEnabled)) {
+    if (rp->fresnelRendering && (m->transparency > EPS || !rp->monteCarloEnabled))
+    {
         float prob = r.getFresnelProbability(normal, ior_from, ior_to);
         refract_part = 1.f - prob;
         Cartesian3 fresnel_normal = go_out ? -1.f * normal : normal;
         Ray fresnel_ray = r.getReflectAt(intersetion, fresnel_normal);
         fresnel_ray.ray_type = r.ray_type;
-        if (r.ray_type == Ray::primary) {
+        if (r.ray_type == Ray::primary)
+        {
             // for internal refraction
-            fresnel_ray.origin = fresnel_ray.origin + 20.f *EPS *fresnel_normal;
+            fresnel_ray.origin = fresnel_ray.origin + 20.f * EPS * fresnel_normal;
         }
         if (m->transparency > EPS)
             color = color + m->transparency * prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1);
         else
             color = color + prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1).modulate(m->specular);
-
     }
     // refraction
-    if (rp->refractionEnabled && m->transparency > EPS) {
+    if (rp->refractionEnabled && m->transparency > EPS)
+    {
         bool valid;
         Ray refract_ray = r.getRefractAt(intersetion, normal, ior_from, ior_to, valid);
-        if (valid) {
-            color = color + m->transparency * refract_part *colorFromRay(refract_ray, ior_to, maxdepth - 1);
+        if (valid)
+        {
+            color = color + m->transparency * refract_part * colorFromRay(refract_ray, ior_to, maxdepth - 1);
         }
         needPhong = false;
     }
@@ -241,11 +270,11 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
     // direct color
     if (needPhong && (rp->phongEnabled || rp->shadowsEnabled))
     {
-        Homogeneous4 phong_color(0,0,0,0);
+        Homogeneous4 phong_color(0, 0, 0, 0);
         for (Light &l : scene_lights)
         {
             // disabled under monteCarlo
-            Cartesian3 light_position =  l.GetPositionCenter().Vector();
+            Cartesian3 light_position = l.GetPositionCenter().Vector();
             if (rp->shadowsEnabled && CheckShadowATPoint(intersetion, light_position))
                 continue;
             // Blihn-Phong
@@ -291,4 +320,148 @@ bool Scene::CheckShadowATPoint(Cartesian3 &hitPoint, Cartesian3 &light_position)
     CollisionInfo tci = closestTriangle(lightr);
     float t_max = (light_position - lightr.origin).length();
     return tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight() && !(tci.tri.shared_material->transparency > 0.f && rp->refractionEnabled);
+}
+
+Scene::AABB::AABB(Triangle &tri)
+{
+    float EPS = std::numeric_limits<float>::epsilon();
+    min = Cartesian3(
+        fmin(fmin(tri.verts[0][0], tri.verts[1][0]), tri.verts[2][0]) - EPS,
+        fmin(fmin(tri.verts[0][1], tri.verts[1][1]), tri.verts[2][1]) - EPS,
+        fmin(fmin(tri.verts[0][2], tri.verts[1][2]), tri.verts[2][2]) - EPS);
+    max = Cartesian3(
+        fmax(fmax(tri.verts[0][0], tri.verts[1][0]), tri.verts[2][0]) + EPS,
+        fmax(fmax(tri.verts[0][1], tri.verts[1][1]), tri.verts[2][1]) + EPS,
+        fmax(fmax(tri.verts[0][2], tri.verts[1][2]), tri.verts[2][2]) + EPS);
+    this->tri = tri;
+}
+
+const Scene::AABB Scene::AABB::operator=(const Scene::AABB other)
+{
+    this->min = other.min;
+    this->max = other.max;
+    this->tri = other.tri;
+    return *this;
+}
+
+bool Scene::AABB::hit(const Ray &r, float tmin, float tmax)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        float t0 = fmin(
+            (min[i] - r.origin[i]) / r.direction[i],
+            (max[i] - r.origin[i]) / r.direction[i]);
+        float t1 = fmax(
+            (min[i] - r.origin[i]) / r.direction[i],
+            (max[i] - r.origin[i]) / r.direction[i]);
+        tmin = fmax(t0, tmin);
+        tmax = fmin(t1, tmax);
+        if (tmax < tmin)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+Scene::BVHNode::BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned int end)
+{
+    // build tree
+    int size = end - begin + 1;
+    switch (size)
+    {
+    case 1:
+        left = new BVHNode(boxes[begin]);
+        right = NULL;
+        break;
+    case 2:
+        left = new BVHNode(boxes[begin]);
+        right = new BVHNode(boxes[end]);
+        break;
+    default:
+        // sort objs
+        AABB curmin;
+        for (int i = begin; i <= end; i++)
+        {
+            curmin = boxes[i];
+            int index = i;
+            for (int j = i + 1; j <= end; j++)
+            {
+                AABB other = boxes[j];
+                int r = rand() % 3;
+                if (curmin.min[r] > other.min[r])
+                {
+                    curmin = other;
+                    index = j;
+                }
+            }
+            if (index != i) {
+                boxes[index] = boxes[i];
+                boxes[i] = curmin;
+            }
+        }
+        unsigned int mid = (begin + end) / 2;
+        left = new BVHNode(boxes, begin, mid);
+        right = new BVHNode(boxes, mid + 1, end);
+        break;
+    }
+    AABB l = left->boundingBox, r;
+    if (right != NULL)
+        r = right->boundingBox;
+    else
+        r = l;
+    // union two boxes
+    boundingBox.min = Cartesian3(
+        fmin(l.min.x, r.min.x),
+        fmin(l.min.y, r.min.y),
+        fmin(l.min.z, r.min.z));
+    boundingBox.max  = Cartesian3(
+        fmax(l.max.x, r.max.x),
+        fmax(l.max.y, r.max.y),
+        fmax(l.max.z, r.max.z));
+}
+
+bool Scene::BVHNode::hit(Ray r, float tmin, float tmax, CollisionInfo &ci)
+{
+
+    if (boundingBox.hit(r, tmin, tmax))
+    {
+        if (left == NULL && right == NULL)
+        {
+            if (boundingBox.tri.isValid())
+            {
+                float t = boundingBox.tri.intersect(r);
+                ci.tri = boundingBox.tri;
+                ci.t = t;
+                if (t > tmin && t < tmax)
+                {
+                    return true;
+                }
+            }
+            ci.t = std::numeric_limits<float>::infinity();
+            return false;
+        }
+        CollisionInfo l_ci, r_ci;
+        bool hit_left = left->hit(r, tmin, tmax, l_ci);
+        bool hit_right = false;
+        if (right != nullptr)
+            hit_right = right->hit(r, tmin, tmax, r_ci);
+        if (hit_left && hit_right)
+        {
+            ci = l_ci.t < r_ci.t ? l_ci : r_ci;
+            return true;
+        }
+        if (hit_left)
+        {
+            ci = l_ci;
+            return true;
+        }
+        if (hit_right)
+        {
+            ci = r_ci;
+            return true;
+        }
+        ci.t = std::numeric_limits<float>::infinity();
+        return false;
+    }
 }

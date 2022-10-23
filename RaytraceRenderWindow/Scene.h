@@ -71,6 +71,32 @@ private:
      * @return false
      */
     bool CheckShadowATPoint(Cartesian3 &hitPoint, Cartesian3 &light_position);
+
+    // optimize, AABB box & BVH 
+    struct AABB
+    {
+        Cartesian3 min;
+        Cartesian3 max;
+        Triangle tri;
+        bool hit(const Ray &r, float tmin, float tmax);
+        AABB() : min(Cartesian3()), max(Cartesian3()){}
+        AABB(const AABB & other) : min(other.min), max(other.max), tri(other.tri){}
+        AABB(Triangle &tri);
+        AABB(const Cartesian3 &l, const Cartesian3 &r) : min(l), max(r){}
+        const AABB operator=(const AABB other);
+    };
+
+    struct BVHNode
+    {
+        BVHNode *left;
+        BVHNode *right;
+        AABB boundingBox;
+        BVHNode(AABB &box) : boundingBox(box), left(nullptr), right(nullptr){}
+        BVHNode(std::vector<AABB> &boxes, unsigned int begin, unsigned int end);
+        bool hit(Ray r, float tmin, float tmax, CollisionInfo &ci);
+    };
+    
+    BVHNode *bvh_root;
 };
 
 #endif // SCENE_H
