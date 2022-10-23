@@ -26,6 +26,7 @@
 #include <QOpenGLWidget>
 #include <QMouseEvent>
 #include <thread>
+#include <shared_mutex>
 
 // and include all of our own headers that we need
 #include "ThreeDModel.h"

@@ -102,11 +102,13 @@ void RaytraceRenderWidget::Raytrace()
     raytraceScene.updateScene();
 
     //clear frame buffer before we start
+    raytraceAgainLock.lock();
     frameBuffer.clear(RGBAValue(0.0f, 0.0f, 0.0f,1.0f));
     floatbuffer = std::vector<std::vector<Homogeneous4>>(static_cast<unsigned int>(frameBuffer.height));
     for (std::vector<Homogeneous4> &row : floatbuffer) {
         row = std::vector<Homogeneous4>(static_cast<unsigned int>(frameBuffer.width));
     }
+    raytraceAgainLock.unlock();
 
     raytracingThread= std::thread(&RaytraceRenderWidget::RaytraceThread,this);
     raytracingThread.detach();
@@ -160,8 +162,8 @@ void RaytraceRenderWidget::RaytraceThread()
                 color.y = pow(floatbuffer[j][i].y,1/gamma);
                 color.z = pow(floatbuffer[j][i].z,1/gamma);
                 frameBuffer[j][i] = RGBAValue(color.x*255.0f,color.y*255.0f,color.z*255.0f,255.0f);
-                }
             }
+        }
         std::cout <<"[" << loop <<"]" << " Done a loop!" << std::endl;
         if(restartRaytrace){
             return;

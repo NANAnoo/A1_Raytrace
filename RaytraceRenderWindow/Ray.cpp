@@ -14,7 +14,7 @@ Ray::Ray(Cartesian3 og, Cartesian3 dir, Type rayType)
 
 Ray Ray::getReflectAt(Cartesian3 &hit, Cartesian3 &normal)
 {
-    Cartesian3 retDirection = direction + normal * 2;
+    Cartesian3 retDirection = direction + normal * 2 * std::abs(direction.dot(normal));
     return Ray(hit, retDirection, primary);
 }
 
@@ -49,14 +49,8 @@ Ray Ray::getRefractAt(Cartesian3 &hit, Cartesian3 &normal, float ior_from, float
 
 float Ray::getFresnelProbability(Cartesian3 &normal, float ior_from, float ior_to)
 {
-    float ior_rate = ior_from / ior_to, cos_theta_from;
-    if ((cos_theta_from = normal.dot(direction)) > 0) {
-        // go out
-        ior_rate = 1.f / ior_rate;
-    } else {
-        cos_theta_from = - cos_theta_from;
-    }
-    float r0 = (1.f - ior_rate) / (1.f + ior_rate);
+    float cos_theta_from = std::abs(normal.dot(direction));
+    float r0 = (ior_from - ior_to) / (ior_from + ior_to);
     r0 = r0 * r0;
     return (r0 + (1 - r0) * powf((1 - cos_theta_from), 5));
 }

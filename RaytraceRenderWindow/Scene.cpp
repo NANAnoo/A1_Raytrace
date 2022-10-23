@@ -147,31 +147,101 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
     Cartesian3 normal = (baricentric.x * ci.tri.normals[0].Vector() +
                         baricentric.y * ci.tri.normals[1].Vector() +
                         baricentric.z * ci.tri.normals[2].Vector()).unit();
+    if (rp->interpolationRendering) {
+        return (normal + Cartesian3(1, 1, 1))/2;
+    }
 
     Homogeneous4 tri_color = baricentric.x * ci.tri.colors[0] +
                              baricentric.y * ci.tri.colors[1] +
                              baricentric.z * ci.tri.colors[2];
+    Material *m = ci.tri.shared_material;
 
-    if(ci.tri.shared_material->texture != nullptr) {
+    if(m->texture != nullptr) {
         Cartesian3 texCoord = baricentric.x * ci.tri.uvs[0] +
                                baricentric.y * ci.tri.uvs[1] +
                                 baricentric.z * ci.tri.uvs[2];
-        RGBAValue c = ci.tri.shared_material->texture->GetTexel(texCoord.x, texCoord.y, true);
+        RGBAValue c = m->texture->GetTexel(texCoord.x, texCoord.y, true);
         tri_color.w = c.alpha / 255.f;
         tri_color.x = c.red / 255.f;
         tri_color.y = c.green / 255.f;
         tri_color.z = c.blue / 255.f;
     }
 
-    if (ci.tri.shared_material->isLight())
+    if (m->isLight())
     {
-        return  std::abs(normal.dot(r.direction)) * ci.tri.shared_material->emissive;
+        return tri_color.modulate(m->emissive);
     }
-    intersetion = intersetion + 10 * std::numeric_limits<float>::epsilon() * normal;
+    float EPS = std::numeric_limits<float>::epsilon();
+    intersetion = intersetion + 10 * EPS * normal;
+    // indirectcolor
+    // amblight
+    bool needPhong = true;
+    if (rp->monteCarloEnabled && (1.f - m->reflectivity - m->transparency) > EPS) {
+        // enable monteCarlo
+        Ray difuzz_ray = r.getRandomReflect(intersetion, normal);
+        difuzz_ray.ray_type = r.ray_type;
+        float ambient = (1.f - m->transparency - m->reflectivity);
+        Homogeneous4 temp_color = ambient * colorFromRay(difuzz_ray, current_IOR, maxdepth - 1).modulate(m->ambient);
+        // pdf = 1 / (2 * pi)
+        color = color + 2.f * static_cast<float>(M_PI) * temp_color;
+        needPhong = false;
+//        for (Light l : scene_lights) {
+//            Cartesian3 light_position = l.GetPosition().Vector();
+//            if (CheckShadowATPoint(intersetion, light_position))
+//                continue;
+//            Cartesian3 O_L = light_position - intersetion;
+//            float r = O_L.length();
+//            float cosine = std::max(0.f, normal.dot(O_L));
+//            color = color + (1.f / (r * r) * cosine * l.GetColor()).modulate(m->diffuse);
+//        }
+    }
+    // reflect
+    if (rp->reflectionEnabled && m->reflectivity > EPS) {
+         Ray reflect_ray = r.getReflectAt(intersetion, normal);
+         reflect_ray.ray_type = r.ray_type;
+         color = color + m->reflectivity * colorFromRay(reflect_ray, current_IOR, maxdepth - 1);
+         needPhong = false;
+    }
+
+    // transparency
+    float refract_part = 1.f;
+    float ior_from = current_IOR, ior_to = m->indexOfRefraction;
+    bool go_out = r.direction.dot(normal) > 0;
+    if (go_out) {
+        ior_from = ior_to;
+        ior_to = 1.f;
+    }
+    // Fresnel
+    if (rp->fresnelRendering && (m->transparency > EPS || !rp->monteCarloEnabled)) {
+        float prob = r.getFresnelProbability(normal, ior_from, ior_to);
+        refract_part = 1.f - prob;
+        Cartesian3 fresnel_normal = go_out ? -1.f * normal : normal;
+        Ray fresnel_ray = r.getReflectAt(intersetion, fresnel_normal);
+        fresnel_ray.ray_type = r.ray_type;
+        if (r.ray_type == Ray::primary) {
+            // for internal refraction
+            fresnel_ray.origin = fresnel_ray.origin + 20.f *EPS *fresnel_normal;
+        }
+        if (m->transparency > EPS)
+            color = color + m->transparency * prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1);
+        else
+            color = color + prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1).modulate(m->specular);
+
+    }
+    // refraction
+    if (rp->refractionEnabled && m->transparency > EPS) {
+        bool valid;
+        Ray refract_ray = r.getRefractAt(intersetion, normal, ior_from, ior_to, valid);
+        if (valid) {
+            color = color + m->transparency * refract_part *colorFromRay(refract_ray, ior_to, maxdepth - 1);
+        }
+        needPhong = false;
+    }
     // Blihn-Phong & Shade from lights:
     // direct color
-    if ((!rp->monteCarloEnabled) && (rp->phongEnabled || rp->shadowsEnabled))
+    if (needPhong && (rp->phongEnabled || rp->shadowsEnabled))
     {
+        Homogeneous4 phong_color(0,0,0,0);
         for (Light &l : scene_lights)
         {
             // disabled under monteCarlo
@@ -180,64 +250,16 @@ Homogeneous4 Scene::colorFromRay(Ray &r, float current_IOR, int maxdepth)
                 continue;
             // Blihn-Phong
             if (rp->phongEnabled)
-                color = color + GetColorFromBlinnPhongAtPoint(r.origin, intersetion, normal, ci.tri.shared_material, l);
+                phong_color = phong_color + GetColorFromBlinnPhongAtPoint(r.origin, intersetion, normal, m, l);
             else
                 // default color
                 color = Homogeneous4(1, 1, 1, 1);
         }
         if (rp->phongEnabled)
-            color = color + ci.tri.shared_material->ambient;
+            phong_color = phong_color + m->ambient;
+        color = color + tri_color.modulate(phong_color);
     }
-    // indirectcolor
-    // amblight
-    if (rp->monteCarloEnabled && (1.f - ci.tri.shared_material->reflectivity - ci.tri.shared_material->transparency) > 0.f) {
-        Ray difuzz_ray = r.getRandomReflect(intersetion, normal);
-        difuzz_ray.ray_type = r.ray_type;
-        float ambient = (1.f - ci.tri.shared_material->transparency - ci.tri.shared_material->reflectivity);
-        Homogeneous4 temp_color = ambient * colorFromRay(difuzz_ray, current_IOR, maxdepth - 1).modulate(ci.tri.shared_material->ambient);
-        color = color + 2.f * static_cast<float>(M_PI) * temp_color;
-//        for (Light l : scene_lights) {
-//            Cartesian3 light_position = l.GetPosition().Vector();
-//            if (CheckShadowATPoint(intersetion, light_position))
-//                continue;
-//            Cartesian3 O_L = light_position - intersetion;
-//            float r = O_L.length();
-//            float cosine = std::max(0.f, normal.dot(O_L));
-//            color = color + (1.f / (r * r) * cosine * l.GetColor()).modulate(ci.tri.shared_material->diffuse);
-//        }
-    }
-    // reflect
-    if (rp->reflectionEnabled && ci.tri.shared_material->reflectivity > 0.f) {
-         Ray reflect_ray = r.getReflectAt(intersetion, normal);
-         reflect_ray.ray_type = r.ray_type;
-         color = color + ci.tri.shared_material->reflectivity * colorFromRay(reflect_ray, current_IOR, maxdepth - 1);
-    }
-
-    // transparency
-    float refract_part = 1.f;
-    float ior_from = current_IOR, ior_to = ci.tri.shared_material->indexOfRefraction;
-    if (r.ray_type == Ray::secondary) {
-        ior_from = ior_to;
-        ior_to = 1.f;
-    }
-    if (rp->fresnelRendering && ci.tri.shared_material->transparency > 0.f) {
-        // Fresnel Reflec
-        float prob = r.getFresnelProbability(normal, ior_from, ior_to);
-        refract_part = 1.f - prob;
-        Ray fresnel_ray = r.getReflectAt(intersetion, normal);
-        if (r.ray_type == Ray::secondary)
-            fresnel_ray.origin = fresnel_ray.origin - normal * 20 * std::numeric_limits<float>::epsilon();
-        fresnel_ray.ray_type = r.ray_type;
-        color = color + ci.tri.shared_material->transparency * prob * colorFromRay(fresnel_ray, current_IOR, maxdepth - 1);
-    }
-    if (rp->refractionEnabled && ci.tri.shared_material->transparency > 0.f) {
-        bool valid;
-        Ray refract_ray = r.getRefractAt(intersetion, normal, ior_from, ior_to, valid);
-        if (valid) {
-            color = color + ci.tri.shared_material->transparency * refract_part * colorFromRay(refract_ray, ior_to, maxdepth - 1);
-        }
-    }
-    return tri_color.modulate(color);
+    return color;
 }
 
 Homogeneous4 Scene::GetColorFromBlinnPhongAtPoint(Cartesian3 &lookFrom, Cartesian3 &hitPoint, Cartesian3 &normal, Material *m, Light l)
@@ -268,5 +290,5 @@ bool Scene::CheckShadowATPoint(Cartesian3 &hitPoint, Cartesian3 &light_position)
 
     CollisionInfo tci = closestTriangle(lightr);
     float t_max = (light_position - lightr.origin).length();
-    return tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight();
+    return tci.t > EPS && tci.t < t_max && !tci.tri.shared_material->isLight() && !(tci.tri.shared_material->transparency > 0.f && rp->refractionEnabled);
 }
