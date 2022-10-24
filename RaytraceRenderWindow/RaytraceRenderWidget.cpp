@@ -42,8 +42,10 @@ RaytraceRenderWidget::RaytraceRenderWidget
         QTimer *timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, &RaytraceRenderWidget::forceRepaint);
         timer->start(30);
+        pthread_rwlock_init(&rw_lock, NULL);
     // leaves nothing to put into the constructor body
     } // constructor    
+    // init lock
 
 void RaytraceRenderWidget::forceRepaint(){
     update();
@@ -55,6 +57,8 @@ RaytraceRenderWidget::~RaytraceRenderWidget()
     // all of our pointers are to data owned by another class
     // so we have no responsibility for destruction
     // and OpenGL cleanup is taken care of by Qt
+    // destory lock
+    pthread_rwlock_destroy(&rw_lock);
     } // destructor                                                                 
 
 // called when OpenGL context is set up
@@ -96,19 +100,20 @@ void RaytraceRenderWidget::Raytrace()
         raytracingThread.join();
     restartRaytrace = false;
 
+    // thread safety:
+    pthread_rwlock_wrlock(&rw_lock);
     //To make our lifes easier, lets calculate things on VCS.
     //So we need to process our scene to get a triangle soup in VCS.
     //IMPORTANT: You still need to complete the method that gets the modelview matrix in the scene class!
     raytraceScene.updateScene();
 
     //clear frame buffer before we start
-    raytraceAgainLock.lock();
     frameBuffer.clear(RGBAValue(0.0f, 0.0f, 0.0f,1.0f));
     floatbuffer = std::vector<std::vector<Homogeneous4>>(static_cast<unsigned int>(frameBuffer.height));
     for (std::vector<Homogeneous4> &row : floatbuffer) {
         row = std::vector<Homogeneous4>(static_cast<unsigned int>(frameBuffer.width));
     }
-    raytraceAgainLock.unlock();
+    pthread_rwlock_unlock(&rw_lock);
 
     raytracingThread= std::thread(&RaytraceRenderWidget::RaytraceThread,this);
     raytracingThread.detach();
@@ -130,7 +135,7 @@ void RaytraceRenderWidget::RaytraceThread()
 #endif
         for(int j = 0; j < frameBuffer.height; j++){
             for(int i = 0; i < frameBuffer.width; i++) {
-
+                pthread_rwlock_rdlock(&rw_lock);
                 //TODO: YOUR CODE GOES HERE
                 Homogeneous4 color; // calculate your raytraced color here.
 
@@ -162,6 +167,7 @@ void RaytraceRenderWidget::RaytraceThread()
                 color.y = pow(floatbuffer[j][i].y,1/gamma);
                 color.z = pow(floatbuffer[j][i].z,1/gamma);
                 frameBuffer[j][i] = RGBAValue(color.x*255.0f,color.y*255.0f,color.z*255.0f,255.0f);
+                pthread_rwlock_unlock(&rw_lock);
             }
         }
         std::cout <<"[" << loop <<"]" << " Done a loop!" << std::endl;

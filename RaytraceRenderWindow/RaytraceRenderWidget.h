@@ -26,6 +26,7 @@
 #include <QOpenGLWidget>
 #include <QMouseEvent>
 #include <thread>
+#include <pthread.h>
 #include <shared_mutex>
 
 // and include all of our own headers that we need
@@ -92,9 +93,8 @@ class RaytraceRenderWidget : public QOpenGLWidget
     std::vector<std::vector<Homogeneous4>> floatbuffer;
 
     void forceRepaint();
-    std::mutex drawingLock;
-    std::mutex raytraceAgainLock;
     bool restartRaytrace;
+	pthread_rwlock_t rw_lock;
 
 	signals:
 	// these are general purpose signals, which scale the drag to 

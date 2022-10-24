@@ -17,6 +17,11 @@ Scene::Scene(std::vector<ThreeDModel> *texobjs, RenderParameters *renderp)
     default_mat = new Material(ambient, diffuse, specular, emissive, shininess);
 }
 
+Scene::~Scene()
+{
+    destoryBVHTree(bvh_root);
+}
+
 Matrix4 Scene::getModelview()
 {
     Matrix4 result;
@@ -109,7 +114,9 @@ void Scene::updateScene()
     {
         scene_lights.push_back(l->TransformedLight(modelView));
     }
-
+    
+    // destory tree if need
+    destoryBVHTree(bvh_root);
     // build BVH tree
     if (triangles.size() > 10)
     {
@@ -465,4 +472,15 @@ bool Scene::BVHNode::hit(Ray r, float tmin, float tmax, CollisionInfo &ci)
     }
     ci.t = std::numeric_limits<float>::infinity();
     return false;
+}
+
+
+void Scene::destoryBVHTree(BVHNode *node)
+{
+    if (node == nullptr) {
+        return;
+    }
+    destoryBVHTree(node->left);
+    destoryBVHTree(node->right);
+    delete node;
 }

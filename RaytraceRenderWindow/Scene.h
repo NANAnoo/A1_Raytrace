@@ -40,6 +40,7 @@ public:
     std::vector<Triangle> triangles;
     std::vector<Light> scene_lights;
     Scene(std::vector<ThreeDModel> *texobjs, RenderParameters *renderp);
+    ~Scene();
     void updateScene();
     CollisionInfo closestTriangle(Ray r);
     Matrix4 getModelview();
@@ -97,6 +98,7 @@ private:
     };
     
     BVHNode *bvh_root;
+    void destoryBVHTree(BVHNode *node);
 };
 
 #endif // SCENE_H
