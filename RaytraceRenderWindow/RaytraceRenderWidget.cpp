@@ -71,12 +71,7 @@ void RaytraceRenderWidget::initializeGL()
 void RaytraceRenderWidget::resizeGL(int w, int h)
     { // RaytraceRenderWidget::resizeGL()
     // resize the render image
-#if defined(__APPLE__)
-    // mac suit screen
-    frameBuffer.Resize(2 * w, 2 * h);
-#else
     frameBuffer.Resize(w, h);
-#endif
     } // RaytraceRenderWidget::resizeGL()
     
 // called every time the widget needs painting
@@ -129,10 +124,7 @@ void RaytraceRenderWidget::RaytraceThread()
     //Each pixel in parallel using openMP.
     for(int loop = 0; loop < loops; loop++){
         float aspect_radio = static_cast<float>(frameBuffer.width) /  static_cast<float>(frameBuffer.height);
-#ifndef  __APPLE__
-// solve compile problem in mac
         #pragma omp parallel for schedule(dynamic)
-#endif
         for(int j = 0; j < frameBuffer.height; j++){
             for(int i = 0; i < frameBuffer.width; i++) {
                 pthread_rwlock_rdlock(&rw_lock);
